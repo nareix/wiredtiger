@@ -50,20 +50,20 @@ class test_timestamp18(wttest.WiredTigerTestCase):
         value3 = 'c' * 500
 
         # A series of timestamped writes on each key.
-        self.session.begin_transaction()
         for i in range(1, 10000):
+            self.session.begin_transaction()
             cursor[str(i)] = value1
-        self.session.commit_transaction('commit_timestamp=' + timestamp_str(2))
+            self.session.commit_transaction('commit_timestamp=' + timestamp_str(2))
 
-        self.session.begin_transaction()
         for i in range(1, 10000):
+            self.session.begin_transaction()
             cursor[str(i)] = value2
-        self.session.commit_transaction('commit_timestamp=' + timestamp_str(3))
+            self.session.commit_transaction('commit_timestamp=' + timestamp_str(3))
 
-        self.session.begin_transaction()
         for i in range(1, 10000):
+            self.session.begin_transaction()
             cursor[str(i)] = value3
-        self.session.commit_transaction('commit_timestamp=' + timestamp_str(4))
+            self.session.commit_transaction('commit_timestamp=' + timestamp_str(4))
 
         # Add a non-timestamped delete.
         for i in range(1, 10000):

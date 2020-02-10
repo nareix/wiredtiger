@@ -1066,7 +1066,11 @@ __hs_delete_key(WT_SESSION_IMPL *session, WT_CURSOR *hs_cursor, uint32_t btree_i
 
     /* Place the history store cursor at the beginning of the key range. */
     hs_cursor->set_key(hs_cursor, btree_id, key, WT_TS_NONE, WT_TXN_NONE, WT_TS_NONE, WT_TXN_NONE);
-    WT_RET(hs_cursor->search_near(hs_cursor, &exact));
+    ret = hs_cursor->search_near(hs_cursor, &exact);
+    /* No need to proceed if there is nothing in the history store table. */
+    if (ret == WT_NOTFOUND)
+        return (0);
+    WT_RET_NOTFOUND_OK(ret);
     if (exact < 0)
         WT_RET(hs_cursor->next(hs_cursor));
     WT_RET(hs_cursor->get_key(hs_cursor, &hs_btree_id, &hs_key, &hs_start.timestamp,
@@ -1079,6 +1083,12 @@ __hs_delete_key(WT_SESSION_IMPL *session, WT_CURSOR *hs_cursor, uint32_t btree_i
         return (0);
     WT_RET(__wt_compare(session, NULL, &hs_key, key, &cmp));
     if (cmp != 0)
+        return (0);
+    /*
+     * If there are ONLY non-timestamped writes in the history store then don't bother. There's no
+     * visibility issue here.
+     */
+    if (hs_start.timestamp == WT_TS_NONE)
         return (0);
     /* Now temporarily open a new history cursor to point at the end of the key range. */
     WT_WITHOUT_DHANDLE(
@@ -1097,7 +1107,7 @@ __hs_delete_key(WT_SESSION_IMPL *session, WT_CURSOR *hs_cursor, uint32_t btree_i
      */
     WT_ERR(end_cursor->get_key(end_cursor, &hs_btree_id, &hs_key, &hs_start.timestamp,
       &hs_start.txnid, &hs_stop.timestamp, &hs_stop.txnid));
-    WT_ASSERT(session, hs_btree_id != btree_id);
+    WT_ASSERT(session, hs_btree_id == btree_id);
     WT_ERR(__wt_compare(session, NULL, &hs_key, key, &cmp));
     WT_ASSERT(session, cmp == 0);
 #endif
