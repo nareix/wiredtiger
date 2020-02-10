@@ -1089,6 +1089,12 @@ __hs_delete_key(WT_SESSION_IMPL *session, WT_CURSOR *hs_cursor, uint32_t btree_i
     if (exact > 0)
         WT_ERR(end_cursor->prev(end_cursor));
 #ifdef HAVE_DIAGNOSTIC
+    /*
+     * We've already confirmed that there is at least one history store record for this key due to
+     * the fact that we were able to successfully position the begin cursor. So there's no way that
+     * we'll end up outside of the key range here. At the very least, we'll be positioned on the
+     * same record that the begin cursor is pointing at in which case, truncate won't do anything.
+     */
     WT_ERR(end_cursor->get_key(end_cursor, &hs_btree_id, &hs_key, &hs_start.timestamp,
       &hs_start.txnid, &hs_stop.timestamp, &hs_stop.txnid));
     WT_ASSERT(session, hs_btree_id != btree_id);
