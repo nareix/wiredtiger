@@ -14,6 +14,9 @@
  */
 #define WT_HS_SESSION_FLAGS (WT_SESSION_IGNORE_CACHE_SIZE | WT_SESSION_NO_RECONCILE)
 
+static int __hs_delete_key(
+  WT_SESSION_IMPL *session, WT_CURSOR *hs_cursor, uint32_t btree_id, WT_ITEM *key);
+
 /*
  * __wt_hs_get_btree --
  *     Get the history store btree. Open a history store cursor if needed to get the btree.
@@ -517,6 +520,13 @@ __wt_hs_insert_updates(WT_CURSOR *cursor, WT_BTREE *btree, WT_RECONCILE *r, WT_M
             break;
         default:
             WT_ERR(__wt_illegal_value(session, page->type));
+        }
+
+        for (upd = list->onpage_upd; upd != NULL; upd = upd->next) {
+            if (upd->start_ts == WT_TS_NONE) {
+                WT_ERR(__hs_delete_key(session, cursor, btree_id, key));
+                break;
+            }
         }
 
         /*
@@ -1036,5 +1046,57 @@ err:
 
     WT_ASSERT(session, upd != NULL || ret != 0);
 
+    return (ret);
+}
+
+/*
+ * __hs_delete_key --
+ *     Delete an entire key's worth of data in the history store.
+ */
+static int
+__hs_delete_key(WT_SESSION_IMPL *session, WT_CURSOR *hs_cursor, uint32_t btree_id, WT_ITEM *key)
+{
+    WT_CURSOR *end_cursor;
+    WT_DECL_RET;
+    WT_ITEM hs_key;
+    WT_TIME_PAIR hs_start, hs_stop;
+    uint32_t hs_btree_id;
+    int cmp, exact;
+    const char *open_cursor_cfg[] = {WT_CONFIG_BASE(session, WT_SESSION_open_cursor), NULL};
+
+    /* Place the history store cursor at the beginning of the key range. */
+    hs_cursor->set_key(hs_cursor, btree_id, key, WT_TS_NONE, WT_TXN_NONE, WT_TS_NONE, WT_TXN_NONE);
+    WT_RET(hs_cursor->search_near(hs_cursor, &exact));
+    if (exact < 0)
+        WT_RET(hs_cursor->next(hs_cursor));
+    WT_RET(hs_cursor->get_key(hs_cursor, &hs_btree_id, &hs_key, &hs_start.timestamp,
+      &hs_start.txnid, &hs_stop.timestamp, &hs_stop.txnid));
+    /*
+     * If the btree id or key isn't ours, it means there is no history store content for this key.
+     * No need to truncate anything to let's just get out of here.
+     */
+    if (hs_btree_id != btree_id)
+        return (0);
+    WT_RET(__wt_compare(session, NULL, &hs_key, key, &cmp));
+    if (cmp != 0)
+        return (0);
+    /* Now temporarily open a new history cursor to point at the end of the key range. */
+    WT_WITHOUT_DHANDLE(
+      session, ret = __wt_open_cursor(session, WT_HS_URI, NULL, open_cursor_cfg, &end_cursor));
+    WT_ERR(ret);
+    end_cursor->set_key(end_cursor, btree_id, key, WT_TS_MAX, WT_TXN_MAX, WT_TS_MAX, WT_TXN_MAX);
+    WT_ERR(end_cursor->search_near(end_cursor, &exact));
+    if (exact > 0)
+        WT_ERR(end_cursor->prev(end_cursor));
+#ifdef HAVE_DIAGNOSTIC
+    WT_ERR(end_cursor->get_key(end_cursor, &hs_btree_id, &hs_key, &hs_start.timestamp,
+      &hs_start.txnid, &hs_stop.timestamp, &hs_stop.txnid));
+    WT_ASSERT(session, hs_btree_id != btree_id);
+    WT_ERR(__wt_compare(session, NULL, &hs_key, key, &cmp));
+    WT_ASSERT(session, cmp == 0);
+#endif
+    WT_ERR(session->iface.truncate(&session->iface, NULL, hs_cursor, end_cursor, NULL));
+err:
+    WT_TRET(end_cursor->close(end_cursor));
     return (ret);
 }
