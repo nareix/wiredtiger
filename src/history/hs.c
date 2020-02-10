@@ -522,12 +522,11 @@ __wt_hs_insert_updates(WT_CURSOR *cursor, WT_BTREE *btree, WT_RECONCILE *r, WT_M
             WT_ERR(__wt_illegal_value(session, page->type));
         }
 
-        for (upd = list->onpage_upd; upd != NULL; upd = upd->next) {
+        for (upd = list->onpage_upd; upd != NULL; upd = upd->next)
             if (upd->start_ts == WT_TS_NONE) {
                 WT_ERR(__hs_delete_key(session, cursor, btree_id, key));
                 break;
             }
-        }
 
         /*
          * Trim any updates before writing to history store. This saves wasted work, but is also
@@ -1077,7 +1076,7 @@ __hs_delete_key(WT_SESSION_IMPL *session, WT_CURSOR *hs_cursor, uint32_t btree_i
       &hs_start.txnid, &hs_stop.timestamp, &hs_stop.txnid));
     /*
      * If the btree id or key isn't ours, it means there is no history store content for this key.
-     * No need to truncate anything to let's just get out of here.
+     * No need to truncate anything so let's just get out of here.
      */
     if (hs_btree_id != btree_id)
         return (0);

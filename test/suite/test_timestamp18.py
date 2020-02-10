@@ -66,17 +66,29 @@ class test_timestamp18(wttest.WiredTigerTestCase):
             self.session.commit_transaction('commit_timestamp=' + timestamp_str(4))
 
         # Add a non-timestamped delete.
+        # Let's do every second key to ensure that we get the truncation right and don't
+        # accidentally destroy content from an adjacent key.
         for i in range(1, 10000):
-            cursor.set_key(str(i))
-            cursor.remove()
+            if i % 2 == 0:
+                cursor.set_key(str(i))
+                cursor.remove()
 
         self.session.checkpoint()
 
-        # The non-timestamped delete should cover all the previous writes and make them effectively
-        # invisible.
         for ts in range(2, 4):
             self.session.begin_transaction('read_timestamp=' + timestamp_str(ts))
             for i in range(1, 10000):
-                cursor.set_key(str(i))
-                self.assertEqual(cursor.search(), wiredtiger.WT_NOTFOUND)
+                # The non-timestamped delete should cover all the previous writes and make them effectively
+                # invisible.
+                if i % 2 == 0:
+                    cursor.set_key(str(i))
+                    self.assertEqual(cursor.search(), wiredtiger.WT_NOTFOUND)
+                # Otherwise, expect one of the timestamped writes.
+                else:
+                    if ts == 2:
+                        self.assertEqual(cursor[str(i)], value1)
+                    elif ts == 3:
+                        self.assertEqual(cursor[str(i)], value2)
+                    else:
+                        self.assertEqual(cursor[str(i)], value3)
             self.session.rollback_transaction()
